@@ -1,0 +1,77 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Detection Result</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #74ebd5, #9face6);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .result-box {
+            background: #fff;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0px 8px 20px rgba(0,0,0,0.2);
+            text-align: center;
+            max-width: 700px;
+            width: 100%;
+        }
+        h1 {
+            font-size: 2rem;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: #333;
+        }
+        .stat {
+            font-size: 1.2rem;
+            margin: 10px 0;
+        }
+        .conclusion {
+            margin-top: 20px;
+            font-size: 1.5rem;
+            font-weight: bold;
+            padding: 12px;
+            border-radius: 10px;
+        }
+        .cheating {
+            background: #f8d7da;
+            color: #842029;
+        }
+        .non-cheating {
+            background: #d1e7dd;
+            color: #0f5132;
+        }
+        .btn-custom {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 1.1rem;
+            border-radius: 25px;
+            transition: all 0.3s ease;
+        }
+        .btn-custom:hover {
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body>
+<div class="result-box">
+    <h1>📊 Detection Summary</h1>
+    <p class="stat">🔹 Total Frames Analyzed: <strong>{{ total }}</strong></p>
+    <p class="stat">⚠ Cheating Frames: <strong>{{ cheating }}</strong></p>
+    <p class="stat">✅ Non-Cheating Frames: <strong>{{ non_cheating }}</strong></p>
+
+    <div class="conclusion {% if conclusion == 'Cheating Detected' %}cheating{% else %}non-cheating{% endif %}">
+        {{ conclusion }}
+    </div>
+
+    <a href="/" class="btn btn-primary btn-custom">🔄 Back to Home</a>
+</div>
+</body>
+</html>

@@ -1,0 +1,105 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Cheating Detection</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #74ebd5, #9face6);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .container-box {
+            background: #fff;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0px 8px 20px rgba(0,0,0,0.2);
+            text-align: center;
+            max-width: 800px;
+            width: 100%;
+        }
+        h1 { font-size: 2rem; margin-bottom: 20px; font-weight: bold; color: #333; }
+        .video-box { border: 4px solid #333; border-radius: 12px; margin-bottom: 20px; box-shadow: 0px 6px 15px rgba(0,0,0,0.15); }
+        .btn-custom { width: 160px; font-size: 1.1rem; padding: 10px; border-radius: 25px; transition: all 0.3s ease; }
+        .btn-custom:hover { transform: scale(1.05); }
+        #status { margin-top: 15px; font-size: 1rem; font-weight: 500; }
+    </style>
+</head>
+<body>
+<div class="container-box">
+    <h1>🎥 Online Exam Cheating Detection</h1>
+    <div>
+        <img src="{{ url_for('video_feed') }}" class="video-box" width="640" height="480">
+    </div>
+    <div class="mt-3">
+        <button onclick="startRecording()" class="btn btn-success btn-custom me-3">▶ Start</button>
+        <button onclick="stopRecording()" class="btn btn-danger btn-custom">⏹ Stop</button>
+    </div>
+    <p id="status" class="text-secondary"></p>
+</div>
+
+<script>
+let examDuration = {{ exam_duration }};
+let remainingTime = examDuration;
+let warningShown = false;
+
+// Timer UI
+const timerDisplay = document.createElement('div');
+timerDisplay.style.position = 'fixed';
+timerDisplay.style.top = '10px';
+timerDisplay.style.right = '20px';
+timerDisplay.style.background = '#212529';
+timerDisplay.style.color = 'white';
+timerDisplay.style.padding = '10px 20px';
+timerDisplay.style.borderRadius = '8px';
+timerDisplay.style.fontWeight = 'bold';
+timerDisplay.style.zIndex = '9999';
+document.body.appendChild(timerDisplay);
+
+function updateTimer() {
+    let minutes = Math.floor(remainingTime / 60);
+    let seconds = remainingTime % 60;
+    timerDisplay.textContent = `⏱ ${minutes}:${seconds.toString().padStart(2, '0')}`;
+    if (remainingTime <= 0) window.location.href = '/result';
+    remainingTime--;
+}
+setInterval(updateTimer, 1000);
+
+// Detect tab switch
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        fetch('/tab_switch', { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.warning && !warningShown) {
+                    warningShown = true;
+                    alert("⚠️ Tab switch detected! Next attempt will terminate your exam.");
+                } else if (data.terminated) {
+                    alert("❌ Exam terminated due to multiple tab switches.");
+                    window.location.href = '/result';
+                }
+            });
+    }
+});
+
+function startRecording() {
+    fetch("/start")
+        .then(r => r.text())
+        .then(() => document.getElementById("status").innerText = "✅ Recording Started...");
+}
+
+function stopRecording() {
+    fetch("/stop")
+        .then(r => r.text())
+        .then(html => {
+            document.open(); document.write(html); document.close();
+        });
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+<div class="container mt-4">
+    <h2>👨‍💼 Admin Dashboard</h2>
+    <p>Welcome Admin! Here you can see student results.</p>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">⏰ Set Exam Timer</h5>
+            <form action="/set_timer" method="POST" class="row g-3 align-items-center">
+                <div class="col-auto">
+                    <label for="timer" class="col-form-label">Duration (minutes):</label>
+                </div>
+                <div class="col-auto">
+                    <input type="number" id="timer" name="timer" class="form-control" value="{{ current_timer // 60 }}" min="1" required>
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-primary">Update Timer</button>
+                </div>
+            </form>
+            <p class="text-muted mt-2">Current timer: <strong>{{ current_timer // 60 }} minute(s)</strong></p>
+        </div>
+    </div>
+
+    <table class="table table-bordered mt-3">
+        <thead>
+            <tr>
+                <th>Student</th>
+                <th>Total Frames</th>
+                <th>Cheating Frames</th>
+                <th>Conclusion</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Student</td>
+                <td>{{ total }}</td>
+                <td>{{ cheating }}</td>
+                <td>{{ conclusion }}</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+</body>
+</html>
