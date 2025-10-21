@@ -1,4 +1,231 @@
+from flask import Flask, render_template, Response, request, redirect, url_for, jsonify
+import cv2
+import torch
+import mediapipe as mp
+import os
+import time
 
+app = Flask(__name__)
+app.secret_key = "exam_secret_key"
+
+# -------------------------------
+# Load YOLOv5 model
+# -------------------------------
+model = torch.hub.load('yolov5', 'custom', path='best.pt', source='local', force_reload=True)
+print("✅ YOLO model loaded:", model.names)
+
+# -------------------------------
+# Initialize MediaPipe
+# -------------------------------
+mp_face_mesh = mp.solutions.face_mesh
+face_mesh = mp_face_mesh.FaceMesh(refine_landmarks=True, max_num_faces=2)
+
+# -------------------------------
+# Globals & Parameters
+# -------------------------------
+confidence_threshold = 0.45
+HEAD_TURN_THRESHOLD = 18     # left/right turn threshold
+LIP_MOVEMENT_THRESHOLD = 3.5
+LOOK_DOWN_THRESHOLD = 10     # looking down within this range won't count as cheating
+FRAME_SKIP = 5
+HOLD_TIME = 2.5
+EXAM_DURATION = 60  # seconds
+
+cheating_count = 0
+non_cheating_count = 0
+last_state = "No Face Detected"
+last_detection_time = 0
+frame_counter = 0
+exam_start_time = None
+exam_terminated = False
+tab_switch_count = 0
+
+
+# -------------------------------
+# Detection Logic
+# -------------------------------
+def detect_cheating(frame):
+    global cheating_count, non_cheating_count, last_detection_time, last_state, frame_counter
+
+    frame_counter += 1
+    h, w, _ = frame.shape
+
+    if frame_counter % FRAME_SKIP != 0:
+        color = (0, 0, 255) if last_state == "Cheating" else (0, 255, 0) if last_state == "Not Cheating" else (255, 255, 0)
+        cv2.putText(frame, last_state, (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+        return frame
+
+    cheating_detected = False
+    face_detected = False
+
+    # ---------- 1️⃣ MediaPipe Detection ----------
+    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results_mp = face_mesh.process(frame_rgb)
+
+    if results_mp.multi_face_landmarks:
+        face_detected = True
+
+        # 🚨 Multiple faces → cheating
+        if len(results_mp.multi_face_landmarks) > 1:
+            cheating_detected = True
+        else:
+            for face_landmarks in results_mp.multi_face_landmarks:
+                left_eye = face_landmarks.landmark[33]
+                right_eye = face_landmarks.landmark[263]
+                nose_tip = face_landmarks.landmark[1]
+                top_lip = face_landmarks.landmark[13]
+                bottom_lip = face_landmarks.landmark[14]
+
+                face_center_x = (left_eye.x + right_eye.x) / 2
+                head_turn = (nose_tip.x - face_center_x) * 100
+                lip_distance = abs(top_lip.y - bottom_lip.y) * h * 10
+                head_tilt = (nose_tip.y - ((left_eye.y + right_eye.y) / 2)) * 100
+
+                # ✅ looking down only (not cheating)
+                if abs(head_turn) < HEAD_TURN_THRESHOLD and head_tilt > LOOK_DOWN_THRESHOLD:
+                    cheating_detected = False
+                # 🚨 head turn left/right or lip movement = cheating
+                elif abs(head_turn) > HEAD_TURN_THRESHOLD or lip_distance > LIP_MOVEMENT_THRESHOLD:
+                    cheating_detected = True
+                else:
+                    cheating_detected = False
+
+    # ---------- 2️⃣ YOLO Fallback ----------
+    if not face_detected:
+        results = model(frame)
+        detections = results.xyxy[0]
+
+        if len(detections) > 1:
+            cheating_detected = True  # multiple people
+        else:
+            for *box, conf, cls in detections:
+                if conf >= confidence_threshold:
+                    label = model.names[int(cls)].lower()
+                    if label == "cheating":
+                        cheating_detected = True
+                    elif label == "non-cheating":
+                        cheating_detected = False
+                    face_detected = True
+                    break
+
+    # ---------- 3️⃣ Update Detection ----------
+    current_time = time.time()
+    if current_time - last_detection_time > HOLD_TIME:
+        if not face_detected:
+            last_state = "No Face Detected"
+        elif cheating_detected:
+            last_state = "Cheating"
+            cheating_count += 1
+        else:
+            last_state = "Not Cheating"
+            non_cheating_count += 1
+        last_detection_time = current_time
+
+    # ---------- 4️⃣ Display ----------
+    color = (0, 0, 255) if last_state == "Cheating" else (0, 255, 0) if last_state == "Not Cheating" else (0, 255, 255)
+    cv2.putText(frame, last_state, (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
+
+    return frame
+
+
+# -------------------------------
+# Video Stream
+# -------------------------------
+def generate_frames():
+    global exam_start_time, exam_terminated
+    cap = cv2.VideoCapture(0)
+    while True:
+        success, frame = cap.read()
+        if not success:
+            break
+
+        frame = cv2.flip(frame, 1)
+        if exam_terminated or not exam_start_time or (time.time() - exam_start_time > EXAM_DURATION):
+            break
+
+        frame = detect_cheating(frame)
+        ret, buffer = cv2.imencode('.jpg', frame)
+        yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+    cap.release()
+
+
+# -------------------------------
+# Routes
+# -------------------------------
+@app.route('/')
+def index():
+    return render_template('login.html')
+
+
+@app.route('/login', methods=['POST'])
+def login():
+    global exam_start_time, exam_terminated, cheating_count, non_cheating_count, tab_switch_count
+
+    username = request.form['username']
+    password = request.form['password']
+    role = request.form['role']
+
+    if role == "admin" and username == "admin" and password == "admin":
+        return redirect(url_for('admin_dashboard'))
+    elif role == "student" and username == "student" and password == "123":
+        exam_start_time = time.time()
+        exam_terminated = False
+        cheating_count = 0
+        non_cheating_count = 0
+        tab_switch_count = 0
+        return render_template('index.html', exam_duration=EXAM_DURATION)
+    else:
+        return render_template('login.html', error="Invalid credentials")
+
+
+@app.route('/video_feed')
+def video_feed():
+    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+
+@app.route('/admin_dashboard')
+def admin_dashboard():
+    conclusion = "Cheating Detected" if cheating_count > non_cheating_count else "No Cheating"
+    total = cheating_count + non_cheating_count
+    return render_template('admin_dashboard.html',
+                           total=total,
+                           cheating=cheating_count,
+                           conclusion=conclusion,
+                           current_timer=EXAM_DURATION)
+
+
+@app.route('/set_timer', methods=['POST'])
+def set_timer():
+    global EXAM_DURATION
+    new_time = int(request.form['timer'])
+    EXAM_DURATION = new_time * 60
+    return redirect(url_for('admin_dashboard'))
+
+
+@app.route('/tab_switch', methods=['POST'])
+def tab_switch():
+    global tab_switch_count, exam_terminated
+    tab_switch_count += 1
+    if tab_switch_count == 1:
+        return jsonify({"warning": True})
+    else:
+        exam_terminated = True
+        return jsonify({"terminated": True})
+
+
+@app.route('/result')
+def result():
+    conclusion = "Cheating Detected" if cheating_count > non_cheating_count else "No Cheating"
+    return render_template('result.html',
+                           total=cheating_count + non_cheating_count,
+                           cheating=cheating_count,
+                           non_cheating=non_cheating_count,
+                           conclusion=conclusion)
+
+
+if __name__ == '__main__':
+    os.makedirs("static", exist_ok=True)
+    app.run(debug=True)
 """from flask import Flask, render_template, Response, request, redirect, url_for, session
 import cv2
 import torch
@@ -929,6 +1156,7 @@ def result():
 if __name__ == '__main__':
     os.makedirs("static", exist_ok=True)
     app.run(debug=True)
+
 
 
 
