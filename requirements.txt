@@ -1,4 +1,6 @@
-opencv-python
-mediapipe
-numpy
 flask
+opencv-python
+numpy
+mediapipe
+torch
+yolov5
